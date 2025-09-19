@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Librus RP</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#7248e6;--muted:#94a3b8;--danger:#fb7185}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#000000 0%, #0e0e0e 60%);font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#e6eef8}
+    header{display:flex;align-items:center;gap:16px;padding:18px 24px}
+    .brand{font-weight:700;font-size:18px;color:var(--accent)}
+    .container{max-width:1100px;margin:20px auto;padding:16px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.03);padding:14px;border-radius:12px;box-shadow:0 4px 14px rgba(2,6,23,0.6)}
+    .grid{display:grid;gap:12px}
+    .cols-2{grid-template-columns:1fr 320px}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input,select,textarea,button{font-size:14px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+    input:focus,select:focus,textarea:focus{outline:2px solid rgba(110,231,183,0.12);border-color:rgba(110,231,183,0.18)}
+    .row{display:flex;gap:8px;align-items:center}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;text-align:left;border-bottom:1px dashed rgba(255,255,255,0.02);font-size:14px}
+    th{font-weight:600;color:var(--muted)}
+    .small{font-size:13px;color:var(--muted)}
+    .btn{background:var(--accent);color:#042428;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600}
+    .btn.ghost{background:transparent;color:var(--accent);border:1px solid rgba(110,231,183,0.12)}
+    .danger{background:var(--danger);color:#2b0b10}
+    .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.02);font-weight:600}
+    .muted{color:var(--muted)}
+    .center{display:flex;align-items:center;justify-content:center}
+    footer{margin:20px auto;max-width:1100px;padding:12px;color:var(--muted);font-size:13px}
+    /* responsive */
+    @media(max-width:900px){.cols-2{grid-template-columns:1fr}.container{padding:8px}} 
+  </style>
+</head>
+<body>
+  <header class="card">
+    <div class="brand">Librus RP</div> <!-- na chuj tu jest klasa -->
+  </header>
+
+  <main class="container">
+    <div id="app"></div>
+  </main>
+
+<script>
+// Single-file Electronic Diary for roleplay school
+// Data model stored in localStorage under key: rp_dziennik_v1
+// Minimal auth: users list with role: 'teacher'|'student'. Passwords are stored in plain text in localStorage (ok for roleplay / local use only).
+
+const STORAGE_KEY = 'rp_dziennik_v1';
+
+const defaultState = {
+  users: [
+    {id: 't:krymaz54', name: 'KRYMAZ54', role: 'teacher', pass: 'MAZOWIECKI54'},
+    {id: 't:anttom21', name: 'ANTTOM21', role: 'teacher', pass: 'TOMASZEWSKI21'},
+    {id: 't:pawcza84', name: 'PAWCZA84', role: 'teacher', pass: 'CZARNICKI84'}
+  ],
+  subjects: ['Matematyka','J. polski','Historia','WF'],
+  grades: [ /* {id, studentId, subject, value, date, teacherId, comment} */ ],
+  attendance: [ /* {id, studentId, date, status:'present'|'absent'|'late', teacherId, note} */ ],
+  notes: [ /* {id, targetId(studentId|null for class), text, authorId, date} */ ]
+}
+
+function loadState(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(!raw) { localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState)); return structuredClone(defaultState); }
+  try{ return JSON.parse(raw); }catch(e){ console.error('Corrupt storage, resetting'); localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState)); return structuredClone(defaultState); }
+}
+function saveState(s){ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
+
+let state = loadState();
+let currentUser = null;
+
+// Utility
+function uid(pref='id'){return pref+':'+Math.random().toString(36).slice(2,9)}
+function el(tag,opts={},...children){ const e = document.createElement(tag); for(const k in opts){ if(k==='class') e.className = opts[k]; else if(k==='html') e.innerHTML = opts[k]; else e.setAttribute(k,opts[k]); } for(const c of children) if(typeof c==='string') e.appendChild(document.createTextNode(c)); else if(c) e.appendChild(c); return e }
+
+// App rendering
+const app = document.getElementById('app');
+
+function render(){
+  app.innerHTML = '';
+  if(!currentUser) return renderLogin();
+  if(currentUser.role==='teacher') return renderTeacher();
+  return renderStudent();
+}
+
+// ----- Login -----
+function renderLogin(){
+  const card = el('div',{class:'card grid cols-2'});
+  const formCol = el('div');
+  formCol.appendChild(el('h2',{},'Logowanie'));
+  formCol.appendChild(el('p',{class:'small muted'},'Podaj nazwę użytkownika i hasło (do użytku lokalnego roleplay).'));
+
+  // zamiast selecta -> input tekstowy
+  formCol.appendChild(el('label',{},'Nazwa użytkownika'));
+  const userIn = el('input',{id:'loginUser', placeholder:'np. jan, ania, admin'});
+  formCol.appendChild(userIn);
+
+  formCol.appendChild(el('label',{},'Hasło'));
+  const pass = el('input',{type:'password',id:'loginPass'});
+  formCol.appendChild(pass);
+
+  const btnRow = el('div',{class:'row', style:'margin-top:10px'});
+  const btnLogin = el('button',{class:'btn'},'Zaloguj');
+  btnLogin.onclick = ()=>{
+    const uname = userIn.value.trim().toLowerCase();
+    const p = pass.value;
+    if(!uname){ alert('Podaj nazwę użytkownika.'); return; }
+    const user = state.users.find(x=>{
+      // sprawdzamy po id (np. "s:jan") albo po fragmencie id po dwukropku
+      const shortId = x.id.split(':')[1];
+      return shortId === uname || x.name.toLowerCase() === uname;
+    });
+    if(!user) return alert('Użytkownik nie istnieje');
+    if(user.pass !== p){ alert('Złe hasło'); return; }
+    currentUser = user; render();
+  }
+  btnRow.appendChild(btnLogin);
+
+  const linkCreate = el('button',{class:'btn ghost'},'Utwórz konto');
+  linkCreate.onclick = ()=> renderCreateAccount();
+  btnRow.appendChild(linkCreate);
+  formCol.appendChild(btnRow);
+
+  // prawa kolumna
+  const infoCol = el('div');
+  infoCol.appendChild(el('h3',{},'Szybki start'));
+  infoCol.appendChild(el('p',{class:'small muted'},'Masz wstępne konta: Pani Dyrektor (admin), Jan (student), Anna (student). Hasła: admin, jan, ania.'));
+  infoCol.appendChild(el('p',{class:'small muted'},'Możesz tworzyć nowe konta, dodawać przedmioty, wpisywać oceny i frekwencję.'));
+  infoCol.appendChild(el('hr'));
+  const resetBtn = el('button',{class:'btn ghost'},'Resetuj dane (przywróć przykładowe)');
+  resetBtn.onclick = ()=>{ if(confirm('Przywrócić domyślne dane?')){ state = structuredClone(defaultState); saveState(state); location.reload(); } }
+  infoCol.appendChild(resetBtn);
+
+  card.appendChild(formCol); 
+  card.appendChild(infoCol);
+  app.appendChild(card);
+}
+
+function renderCreateAccount(){
+  app.innerHTML='';
+  const card = el('div',{class:'card'});
+  card.appendChild(el('h2',{},'Utwórz konto'));
+  card.appendChild(el('label',{},'Imię i nazwisko')); const nameIn = el('input',{id:'ca_name'}); card.appendChild(nameIn);
+  card.appendChild(el('label',{},'Rola')); const roleSelect = el('select',{id:'ca_role'}); roleSelect.appendChild(el('option',{value:'student'},'Uczeń')); roleSelect.appendChild(el('option',{value:'teacher'},'Nauczyciel')); card.appendChild(roleSelect);
+  card.appendChild(el('label',{},'Hasło')); const pass = el('input',{id:'ca_pass', type:'password'}); card.appendChild(pass);
+  const btnRow = el('div',{class:'row', style:'margin-top:10px'});
+  const create = el('button',{class:'btn'},'Utwórz'); create.onclick = ()=>{
+    const n = nameIn.value.trim(); const r = roleSelect.value; const p = pass.value;
+    if(!n||!p){ alert('Wypełnij wszystkie pola'); return; }
+    const id = (r==='teacher'?'t':'s')+':'+n.toLowerCase().replace(/\s+/g,'_');
+    state.users.push({id,name:n,role:r,pass:p}); saveState(state); alert('Konto utworzone. Możesz się zalogować.'); render();
+  };
+  btnRow.appendChild(create);
+  const back = el('button',{class:'btn ghost'},'Wróć'); back.onclick = ()=>{ render(); };
+  btnRow.appendChild(back);
+  card.appendChild(btnRow);
+  app.appendChild(card);
+}
+
+// ----- Teacher view -----
+function renderTeacher(){
+  const root = el('div',{});
+  const top = el('div',{class:'card row'});
+  top.appendChild(el('div',{},`Zalogowano jako: ${currentUser.name} `));
+  const logout = el('button',{class:'btn ghost', style:'margin-left:auto'},'Wyloguj'); logout.onclick=()=>{ currentUser=null; render(); };
+  top.appendChild(logout);
+  root.appendChild(top);
+
+  const grid = el('div',{class:'grid cols-2', style:'margin-top:14px'});
+  // left: main tools
+  const left = el('div');
+  left.appendChild(renderTeacherTabs());
+  grid.appendChild(left);
+  // right: quick panel
+  const right = el('div');
+  const info = el('div',{class:'card'});
+  info.appendChild(el('h3',{},'Panel szybkich akcji'));
+  const addStudBtn = el('button',{class:'btn'},'Dodaj ucznia'); addStudBtn.onclick = ()=> promptAddStudent(); info.appendChild(addStudBtn);
+  info.appendChild(el('div',{style:'height:10px'}));
+  const addSubBtn = el('button',{class:'btn ghost'},'Dodaj przedmiot'); addSubBtn.onclick = ()=>{
+    const s = prompt('Nazwa przedmiotu'); if(s){ state.subjects.push(s.trim()); saveState(state); render(); }
+  }; info.appendChild(addSubBtn);
+  info.appendChild(el('hr'));
+  const exportBtn = el('button',{class:'btn'},'Eksportuj dane'); exportBtn.onclick = ()=> exportData(); info.appendChild(exportBtn);
+  const importBtn = el('button',{class:'btn ghost'},'Importuj dane'); importBtn.onclick = ()=> importData(); info.appendChild(importBtn);
+  right.appendChild(info);
+  grid.appendChild(right);
+
+  root.appendChild(grid);
+  app.appendChild(root);
+}
+
+function renderTeacherTabs(){
+  const wrap = el('div',{class:'card'});
+  const nav = el('div',{class:'row', style:'margin-bottom:12px'});
+  const tabs = ['Uczniowie','Oceny','Frekwencja','Notatki','Plan lekcji'];
+  let active = 'Uczniowie';
+  const content = el('div');
+
+  function redraw(){ content.innerHTML=''; if(active==='Uczniowie') content.appendChild(renderStudentsPanel());
+    if(active==='Oceny') content.appendChild(renderGradesPanel());
+    if(active==='Frekwencja') content.appendChild(renderAttendancePanel());
+    if(active==='Notatki') content.appendChild(renderNotesPanel());
+    if(active==='Plan lekcji') content.appendChild(renderSchedulePanel());
+  }
+
+  tabs.forEach(t=>{ const b = el('button',{class:'btn ghost'},t); b.onclick=()=>{ active=t; redraw(); } ; nav.appendChild(b); });
+  wrap.appendChild(nav); wrap.appendChild(content); redraw(); return wrap;
+}
+
+function renderStudentsPanel(){
+  const c = el('div');
+  c.appendChild(el('h3',{},'Lista uczniów'));
+  const t = el('table');
+  const thead = el('thead'); thead.innerHTML='<tr><th>Imię</th><th>Id</th><th>Akcje</th></tr>'; t.appendChild(thead);
+  const tbody = el('tbody');
+  state.users.filter(u=>u.role==='student').forEach(s=>{
+    const tr = el('tr'); tr.appendChild(el('td',{},s.name)); tr.appendChild(el('td',{},s.id));
+    const actions = el('td');
+    const view = el('button',{class:'btn ghost'},'Podgląd'); view.onclick=()=> renderStudentViewPopup(s); actions.appendChild(view);
+    const del = el('button',{class:'btn', style:'margin-left:8px'},'Usuń'); del.onclick=()=>{ if(confirm('Usunąć ucznia?')){ state.users = state.users.filter(x=>x.id!==s.id); // remove related data
+      state.grades = state.grades.filter(g=>g.studentId!==s.id); state.attendance = state.attendance.filter(a=>a.studentId!==s.id); saveState(state); render(); } };
+    actions.appendChild(del);
+    tr.appendChild(actions);
+    tbody.appendChild(tr);
+  });
+  t.appendChild(tbody);
+  c.appendChild(t);
+  return c;
+}
+
+function promptAddStudent(){
+  const name = prompt('Imię i nazwisko ucznia'); if(!name) return;
+  const pass = prompt('Hasło dla ucznia (proste)'); if(!pass) return;
+  const id = 's:'+name.toLowerCase().replace(/\s+/g,'_');
+  state.users.push({id,name,role:'student',pass}); saveState(state); render();
+}
+
+function renderStudentViewPopup(s){
+  const win = window.open('','_blank','width=700,height=600');
+  const doc = win.document; doc.title = 'Podgląd - '+s.name; doc.body.style.background='#071024'; doc.body.style.color='#e6eef8';
+  const wrap = doc.createElement('div'); wrap.style.padding='14px'; doc.body.appendChild(wrap);
+  const h = doc.createElement('h2'); h.textContent = s.name; wrap.appendChild(h);
+  const grades = state.grades.filter(g=>g.studentId===s.id);
+  const gtable = doc.createElement('table'); gtable.style.width='100%'; gtable.innerHTML='<tr><th>Przedmiot</th><th>Ocena</th><th>Komentarz</th><th>Data</th></tr>' + grades.map(g=>`<tr><td>${g.subject}</td><td>${g.value}</td><td>${g.comment||''}</td><td>${g.date}</td></tr>`).join(''); wrap.appendChild(gtable);
+}
+
+function renderGradesPanel(){
+  const c = el('div');
+  c.appendChild(el('h3',{},'Wpisuj oceny'));
+  // form
+  c.appendChild(el('label',{},'Uczeń')); const stud = el('select'); stud.appendChild(el('option',{value:''},'— wybierz —'));
+  state.users.filter(u=>u.role==='student').forEach(s=> stud.appendChild(el('option',{value:s.id},s.name)));
+  c.appendChild(stud);
+  c.appendChild(el('label',{},'Przedmiot')); const subj = el('select'); subj.appendChild(el('option',{value:''},'— wybierz —'));
+  state.subjects.forEach(s=>subj.appendChild(el('option',{value:s},s)));
+  c.appendChild(subj);
+  c.appendChild(el('label',{},'Ocena (np. 5, 4+, 3-)')); const val = el('input',{placeholder:'np. 5'}); c.appendChild(val);
+  c.appendChild(el('label',{},'Komentarz (opcjonalnie)')); const comm = el('input'); c.appendChild(comm);
+  const save = el('button',{class:'btn'},'Zapisz ocenę'); save.onclick=()=>{
+    const sid = stud.value; const sname = state.users.find(u=>u.id===sid)?.name; if(!sid){ alert('Wybierz ucznia'); return; }
+    const sub = subj.value; if(!sub){ alert('Wybierz przedmiot'); return; }
+    const v = val.value.trim(); if(!v){ alert('Podaj ocenę'); return; }
+    const g = {id:uid('g'), studentId:sid, subject:sub, value:v, date:(new Date()).toLocaleString(), teacherId:currentUser.id, comment:comm.value};
+    state.grades.push(g); saveState(state); alert('Ocena zapisana'); render();
+  }
+  c.appendChild(save);
+
+  c.appendChild(el('hr'));
+  c.appendChild(el('h4',{},'Ostatnie oceny')); 
+  const table = el('table'); table.innerHTML = '<thead><tr><th>Uczni</th><th>Przedmiot</th><th>Ocena</th><th>Nauczyciel</th><th>Data</th></tr></thead>';
+  const tbody = el('tbody');
+  state.grades.slice().reverse().slice(0,40).forEach(g=>{
+    const tr = el('tr'); tr.appendChild(el('td',{}, state.users.find(u=>u.id===g.studentId)?.name || g.studentId)); tr.appendChild(el('td',{},g.subject)); tr.appendChild(el('td',{},g.value)); tr.appendChild(el('td',{}, state.users.find(u=>u.id===g.teacherId)?.name || '—')); tr.appendChild(el('td',{},g.date)); tbody.appendChild(tr);
+  }); table.appendChild(tbody); c.appendChild(table);
+  return c;
+}
+
+function renderAttendancePanel(){
+  const c = el('div'); c.appendChild(el('h3',{},'Frekwencja'));
+  const dateIn = el('input',{type:'date'}); c.appendChild(el('label',{},'Data')); c.appendChild(dateIn);
+  c.appendChild(el('label',{},'Wybierz ucznia')); const sselect = el('select'); sselect.appendChild(el('option',{value:''},'— wybierz —'));
+  state.users.filter(u=>u.role==='student').forEach(s=> sselect.appendChild(el('option',{value:s.id},s.name)));
+  c.appendChild(sselect);
+  c.appendChild(el('label',{},'Status')); const status = el('select'); ['present','absent','late'].forEach(st=> status.appendChild(el('option',{value:st},st))); c.appendChild(status);
+  c.appendChild(el('label',{},'Notatka (opcjonalnie)')); const note = el('input'); c.appendChild(note);
+  const btn = el('button',{class:'btn'},'Zapisz'); btn.onclick=()=>{
+    const d = dateIn.value || (new Date()).toISOString().slice(0,10);
+    const sid = sselect.value; if(!sid){ alert('Wybierz ucznia'); return; }
+    state.attendance.push({id:uid('a'), studentId:sid, date:d, status:status.value, teacherId:currentUser.id, note:note.value}); saveState(state); alert('Zapisano'); render();
+  };
+  c.appendChild(btn);
+  c.appendChild(el('hr'));
+  c.appendChild(el('h4',{},'Ostatnie wpisy frekwencji'));
+  const table = el('table'); table.innerHTML = '<thead><tr><th>Uczni</th><th>Data</th><th>Status</th><th>Nauczyciel</th></tr></thead>';
+  const tbody = el('tbody');
+  state.attendance.slice().reverse().slice(0,60).forEach(a=>{
+    const tr = el('tr'); tr.appendChild(el('td',{}, state.users.find(u=>u.id===a.studentId)?.name || a.studentId)); tr.appendChild(el('td',{},a.date)); tr.appendChild(el('td',{},a.status)); tr.appendChild(el('td',{}, state.users.find(u=>u.id===a.teacherId)?.name || '—')); tbody.appendChild(tr);
+  }); table.appendChild(tbody); c.appendChild(table);
+  return c;
+}
+
+function renderNotesPanel(){
+  const c = el('div'); c.appendChild(el('h3',{},'Notatki'));
+  c.appendChild(el('label',{},'Do (puste = cała klasa)')); const target = el('select'); target.appendChild(el('option',{value:''},'Cała klasa'));
+  state.users.filter(u=>u.role==='student').forEach(s=> target.appendChild(el('option',{value:s.id},s.name)));
+  c.appendChild(target);
+  c.appendChild(el('label',{},'Treść')); const area = el('textarea', {rows:3}); c.appendChild(area);
+  const btn = el('button',{class:'btn'},'Dodaj notatkę'); btn.onclick=()=>{
+    const t = target.value || null; const text = area.value.trim(); if(!text) return alert('Pusta treść'); state.notes.push({id:uid('n'), targetId:t, text, authorId:currentUser.id, date:(new Date()).toLocaleString()}); saveState(state); alert('Dodano'); render();
+  }; c.appendChild(btn);
+  c.appendChild(el('hr'));
+  const table = el('table'); table.innerHTML='<thead><tr><th>Do</th><th>Treść</th><th>Autor</th><th>Data</th></tr></thead>';
+  const tbody = el('tbody'); state.notes.slice().reverse().forEach(n=>{ const tr = el('tr'); tr.appendChild(el('td',{}, n.targetId? (state.users.find(u=>u.id===n.targetId)?.name||n.targetId) : 'Cała klasa')); tr.appendChild(el('td',{}, n.text)); tr.appendChild(el('td',{}, state.users.find(u=>u.id===n.authorId)?.name || '—')); tr.appendChild(el('td',{}, n.date)); tbody.appendChild(tr); }); table.appendChild(tbody); c.appendChild(table);
+  return c;
+}
+
+function renderSchedulePanel(){
+  const c = el('div'); c.appendChild(el('h3',{},'Plan lekcji (prosty)'));
+  c.appendChild(el('p',{class:'small muted'},'Ta sekcja jest przykładowa — możesz edytować kod, by rozbudować.'));
+  const table = el('table'); table.innerHTML='<thead><tr><th>Dzień</th><th>Godziny</th><th>Przedmiot</th></tr></thead>';
+  const tbody = el('tbody'); ['Poniedziałek','Wtorek','Środa','Czwartek','Piątek'].forEach(d=> tbody.appendChild(el('tr',{}, el('td',{},d), el('td',{},'8:00 - 15:00'), el('td',{}, state.subjects.join(', ')))));
+  table.appendChild(tbody); c.appendChild(table);
+  return c;
+}
+
+// ----- Student view -----
+function renderStudent(){
+  const root = el('div');
+  const top = el('div',{class:'card row'});
+  top.appendChild(el('div',{},`Zalogowano jako: ${currentUser.name} `));
+  const logout = el('button',{class:'btn ghost', style:'margin-left:auto'},'Wyloguj'); logout.onclick=()=>{ currentUser=null; render(); };
+  top.appendChild(logout);
+  root.appendChild(top);
+
+  const main = el('div',{class:'card', style:'margin-top:12px'});
+  main.appendChild(el('h3',{},'Twoje oceny'));
+  const myGrades = state.grades.filter(g=>g.studentId===currentUser.id);
+  if(myGrades.length===0) main.appendChild(el('p',{class:'small muted'},'Brak ocen jeszcze.'));
+  else{
+    const t = el('table'); t.innerHTML='<thead><tr><th>Przedmiot</th><th>Ocena</th><th>Komentarz</th><th>Data</th></tr></thead>';
+    const tbody = el('tbody'); myGrades.forEach(g=> tbody.appendChild(el('tr',{}, el('td',{},g.subject), el('td',{},g.value), el('td',{},g.comment||''), el('td',{},g.date)))); t.appendChild(tbody); main.appendChild(t);
+  }
+  main.appendChild(el('hr'));
+  main.appendChild(el('h4',{},'Twoja frekwencja (ostatnie wpisy)'));
+  const myAtt = state.attendance.filter(a=>a.studentId===currentUser.id).slice().reverse().slice(0,30);
+  if(myAtt.length===0) main.appendChild(el('p',{class:'small muted'},'Brak wpisów.'));
+  else{ const t2=el('table'); t2.innerHTML='<thead><tr><th>Data</th><th>Status</th><th>Notatka</th></tr></thead>'; const b2=el('tbody'); myAtt.forEach(a=> b2.appendChild(el('tr',{}, el('td',{},a.date), el('td',{},a.status), el('td',{},a.note||'')))); t2.appendChild(b2); main.appendChild(t2); }
+  main.appendChild(el('hr'));
+  main.appendChild(el('h4',{},'Notatki dla Ciebie lub klasy'));
+  const myNotes = state.notes.filter(n=>!n.targetId || n.targetId===currentUser.id).slice().reverse();
+  if(myNotes.length===0) main.appendChild(el('p',{class:'small muted'},'Brak notatek.'));
+  else{ const t3=el('table'); t3.innerHTML='<thead><tr><th>Treść</th><th>Autor</th><th>Data</th></tr></thead>'; const b3=el('tbody'); myNotes.forEach(n=> b3.appendChild(el('tr',{}, el('td',{},n.text), el('td',{}, state.users.find(u=>u.id===n.authorId)?.name || '—'), el('td',{},n.date)))); t3.appendChild(b3); main.appendChild(t3); }
+
+  app.appendChild(root); root.appendChild(main);
+}
+
+// ----- Export / Import -----
+function exportData(){
+  const dataStr = JSON.stringify(state, null, 2);
+  const blob = new Blob([dataStr], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'dziennik_roleplay_export.json'; a.click(); URL.revokeObjectURL(url);
+}
+
+function importData(){
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange = ()=>{
+    const f = inp.files[0]; if(!f) return; const reader = new FileReader(); reader.onload = (e)=>{
+      try{ const parsed = JSON.parse(e.target.result); if(!parsed.users) throw new Error('Nieprawidłowy format'); state = parsed; saveState(state); alert('Zaimportowano dane'); render(); }catch(err){ alert('Błąd importu: '+err.message); }
+    }; reader.readAsText(f);
+  }; inp.click();
+}
+
+// initial render
+render();
+
+</script>
+</body>
+</html>
