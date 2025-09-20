@@ -9,7 +9,7 @@
     *{box-sizing:border-box}
     html,body{height:100%;margin:0;background:linear-gradient(180deg,#000000 0%, #0e0e0e 60%);font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#e6eef8}
     header{display:flex;align-items:center;gap:16px;padding:18px 24px}
-    .brand{font-weight:700;font-size:18px;color:var(--accent)}
+    .brand{font-weight:550;font-size:25px;color:var(--accent)}
     .container{max-width:1100px;margin:20px auto;padding:16px}
     .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.03);padding:14px;border-radius:12px;box-shadow:0 4px 14px rgba(2,6,23,0.6)}
     .grid{display:grid;gap:12px}
@@ -53,9 +53,15 @@ const defaultState = {
   users: [
     {id: 't:krymaz54', name: 'KRYMAZ54', role: 'teacher', pass: 'MAZOWIECKI54'},
     {id: 't:anttom21', name: 'ANTTOM21', role: 'teacher', pass: 'TOMASZEWSKI21'},
-    {id: 't:pawcza84', name: 'PAWCZA84', role: 'teacher', pass: 'CZARNICKI84'}
+    {id: 't:pawcza84', name: 'PAWCZA84', role: 'teacher', pass: 'CZARNICKI84'},
+    {id: 't:makmlo39', name: 'MAKMLO39', role: 'teacher', pass: 'MLODY39'},
+    {id: 't:sebkoz73', name: 'SEBKOZ73', role: 'teacher', pass: 'KOZAK73'},
+    {id: 't:krzkon48', name: 'KRZKON48', role: 'teacher', pass: 'KONUNOWICZ48'},
+    {id: 't:marmic51', name: 'MARMIC51', role: 'teacher', pass: 'MICHAŁOWA51'},
+    {id: 't:lukbra16', name: 'LUKBRA16', role: 'teacher', pass: 'BRAUM16'},
+    {id: 't:test1', name: 'TEST1', role: 'student', pass: 'TEST1'},
   ],
-  subjects: ['Matematyka','J. polski','Historia','WF'],
+  subjects: ['Matematyka','J.Polski','Historia','WF'],
   grades: [ /* {id, studentId, subject, value, date, teacherId, comment} */ ],
   attendance: [ /* {id, studentId, date, status:'present'|'absent'|'late', teacherId, note} */ ],
   notes: [ /* {id, targetId(studentId|null for class), text, authorId, date} */ ]
@@ -94,7 +100,7 @@ function renderLogin(){
 
   // zamiast selecta -> input tekstowy
   formCol.appendChild(el('label',{},'Nazwa użytkownika'));
-  const userIn = el('input',{id:'loginUser', placeholder:'np. jan, ania, admin'});
+  const userIn = el('input',{id:'loginUser', placeholder:'Wpisz swoją nazwe użytkownika'});
   formCol.appendChild(userIn);
 
   formCol.appendChild(el('label',{},'Hasło'));
